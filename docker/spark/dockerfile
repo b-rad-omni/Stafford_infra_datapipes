@@ -1,0 +1,70 @@
+# docker/spark/Dockerfile
+
+FROM openjdk:11-jre-slim
+
+# Define versions as build args for easy updates
+ARG SPARK_VERSION=3.5.0
+ARG HADOOP_VERSION=3
+ARG SCALA_VERSION=2.12
+
+ENV SPARK_VERSION=${SPARK_VERSION}
+ENV HADOOP_VERSION=${HADOOP_VERSION}
+ENV SPARK_HOME=/opt/spark
+ENV PATH=$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin
+ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip:$PYTHONPATH
+
+# Install Python, pip, and other necessary tools
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip python3-dev wget curl && \
+    # Create symlinks for python and pip
+    [ -e /usr/bin/python ] || ln -s /usr/bin/python3 /usr/bin/python \
+    [ -e /usr/bin/pip ] || ln -s /usr/bin/pip3 /usr/bin/pip \
+    # Cleanup
+    rm -rf /var/lib/apt/lists/*
+
+# Download and install Spark with better error handling
+RUN set -ex && \
+    SPARK_TGZ="spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" && \
+    ( \
+      wget -q "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_TGZ}" || \
+      wget -q "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_TGZ}" || \
+      wget -q "https://downloads.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_TGZ}" \
+    ) && \
+    if [ ! -f "${SPARK_TGZ}" ]; then \
+      echo "ERROR: Could not download Spark ${SPARK_VERSION}. Please check the version number." && exit 1; \
+    fi && \
+    tar -xzf ${SPARK_TGZ} && \
+    mv spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} ${SPARK_HOME} && \
+    rm ${SPARK_TGZ}
+
+# Download additional JARs for Kafka integration and cloud storage
+# Using specific versions to ensure compatibility
+RUN cd ${SPARK_HOME}/jars && \
+    # Kafka integration for Spark 3.5.0
+    wget -q --no-check-certificate https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_${SCALA_VERSION}/${SPARK_VERSION}/spark-sql-kafka-0-10_${SCALA_VERSION}-${SPARK_VERSION}.jar || \
+    echo "Warning: Could not download Kafka SQL JAR" && \
+    wget -q --no-check-certificate https://repo1.maven.org/maven2/org/apache/spark/spark-streaming-kafka-0-10_${SCALA_VERSION}/${SPARK_VERSION}/spark-streaming-kafka-0-10_${SCALA_VERSION}-${SPARK_VERSION}.jar || \
+    echo "Warning: Could not download Kafka Streaming JAR" && \
+    wget -q --no-check-certificate https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.5.0/kafka-clients-3.5.0.jar || \
+    echo "Warning: Could not download Kafka clients JAR" && \
+    # PostgreSQL JDBC driver
+    wget -q --no-check-certificate https://jdbc.postgresql.org/download/postgresql-42.6.0.jar || \
+    echo "Warning: Could not download PostgreSQL JDBC driver"
+
+# Copy and install Python requirements
+COPY requirements-spark.txt /tmp/requirements-spark.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-spark.txt || \
+    echo "Warning: Some Python packages may have failed to install"
+
+# Create necessary directories
+RUN mkdir -p /opt/spark-apps /opt/spark/work-dir /data /opt/spark/logs
+
+# Copy Spark configuration files (if they exist)
+COPY docker/spark/spark-defaults.conf ${SPARK_HOME}/conf/ 
+COPY docker/spark/log4j2.properties ${SPARK_HOME}/conf/ 
+
+# Set work directory
+WORKDIR ${SPARK_HOME}
+
+# Default command (can be overridden)
+CMD ["/bin/bash"]

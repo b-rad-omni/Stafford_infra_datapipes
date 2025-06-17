@@ -1,0 +1,36 @@
+# docker/airflow/Dockerfile
+
+FROM apache/airflow:2.7.3-python3.9
+
+# Switch to root to install system dependencies and Python packages
+USER root
+
+# Install system dependencies that might be needed
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Switch back to airflow user for pip installations
+USER airflow
+
+# Copy requirements file first (better Docker layer caching)
+COPY --chown=airflow:root requirements-airflow.txt /tmp/requirements-airflow.txt
+
+# Install Python dependencies as airflow user
+RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
+
+# Create necessary directories with correct permissions
+USER root
+RUN mkdir -p /opt/airflow/dags /opt/airflow/plugins /opt/airflow/logs /opt/airflow/data && \
+    chown -R airflow:root /opt/airflow/dags /opt/airflow/plugins /opt/airflow/logs /opt/airflow/data && \
+    chmod -R 775 /opt/airflow/dags /opt/airflow/plugins /opt/airflow/logs /opt/airflow/data
+
+# Switch back to airflow user
+USER airflow
+
+# Set additional Airflow configuration via environment variables
+ENV AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags \
+    AIRFLOW__CORE__PLUGINS_FOLDER=/opt/airflow/plugins \
+    AIRFLOW__CORE__LOAD_EXAMPLES=False \
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=30
