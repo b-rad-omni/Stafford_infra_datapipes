@@ -1,0 +1,57 @@
+# docker/app/Dockerfile
+# Multi-stage build for smaller final image
+
+# Stage 1: Build stage with full dependencies
+FROM python:3.9-slim as builder
+
+WORKDIR /build
+
+# Install build dependencies that we need for compiling Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install requirements
+# We do this first to leverage Docker's layer caching
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime stage with minimal footprint
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/data/raw /app/logs /app/config && \
+    chown -R appuser:appuser /app
+
+# Copy Python packages from builder stage
+COPY --from=builder /root/.local /home/appuser/.local
+
+# Update PATH to include user's local packages
+ENV PATH=/home/appuser/.local/bin:$PATH
+
+# Copy application code
+COPY --chown=appuser:appuser ./src /app/src
+COPY --chown=appuser:appuser ./config /app/config
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    KAFKA_BOOTSTRAP_SERVERS=kafka:29092 \
+    DATA_OUTPUT_PATH=/app/data/raw \
+    LOG_LEVEL=INFO
+
+# Switch to non-root user
+USER appuser
+
+# Health check to ensure the container is running properly
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
+# Default command - will be created in Phase 4
+# For now, we'll just keep the container running
+CMD ["python", "-c", "print('Data generator container ready. Waiting for Phase 4 implementation...'); import time; time.sleep(3600)"]

@@ -1,0 +1,32 @@
+# requirements-airflow.txt
+# Additional packages needed for Airflow beyond the base image
+
+# Core data pipeline dependencies
+kafka-python==2.0.2
+pyspark==3.5.0
+psycopg2-binary==2.9.7
+
+# dbt integration
+dbt-core==1.6.0
+dbt-postgres==1.6.0
+
+# AWS integration (for future cloud deployment)
+boto3==1.28.57
+awscli==1.29.57
+
+# Data generation and manipulation
+faker==19.6.2
+python-dotenv==1.0.0
+
+# Additional Apache providers
+apache-airflow-providers-amazon==8.5.1
+apache-airflow-providers-ssh==3.8.0
+apache-airflow-providers-slack==8.3.0
+apache-airflow-providers-http==4.5.0
+
+# Monitoring and alerting
+prometheus-client==0.17.1
+statsd==4.0.1
+
+# Data quality
+great-expectations==0.17.19
